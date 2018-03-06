@@ -12,9 +12,10 @@ build:
 define TEMPLATE
 SRC := $${wildcard $(1)/*.c}
 OBJ := $$(basename build/$$(notdir $$(SRC))).o
+LIB := $$(shell cat $(1)/lib.lnk)
 
 $(1)_: build/wrapper.o build/dump.o $$(OBJ)
-	$$(CC) -o $$@ $$^
+	$$(CC) -o $$@ $$^ $$(LIB)
 
 build/%.o: $(1)/%.c
 	$$(CC) -o $$@ -c $$< $$(CFLAGS) -Dpyi_rtn=upk_rtn
