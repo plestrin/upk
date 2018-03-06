@@ -26,7 +26,8 @@ int main(int argc, char** argv){
 
 	if (!strcmp(argv[1], "-o") && argc >= 4){
 		dump_register_path(argv[2]);
-		argv = argv + 2;
+		argv += 2;
+		argc -= 2;
 	}
 	else{
 		dump_register_path("out_");

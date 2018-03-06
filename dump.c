@@ -24,7 +24,7 @@ int dump_open(const char* mod, const char* file_name){
 	file_path[sizeof file_path - 1] = 0;
 
 	if (access(file_path, W_OK)){
-		if (mkdir(file_path, S_IRUSR | S_IWUSR)){
+		if (mkdir(file_path, S_IRWXU | S_IRWXG)){
 			fprintf(stderr, "[-] unable to create directory: \"%s\"\n", file_path);
 			return -1;
 		}
@@ -43,7 +43,7 @@ int dump_open(const char* mod, const char* file_name){
 
 
 	if (access(file_path, W_OK)){
-		if (mkdir(file_path, S_IRUSR | S_IWUSR)){
+		if (mkdir(file_path, S_IRWXU | S_IRWXG)){
 			fprintf(stderr, "[-] unable to create directory: \"%s\"\n", file_path);
 			return -1;
 		}
@@ -60,5 +60,5 @@ int dump_open(const char* mod, const char* file_name){
 	}
 	file_path[sizeof file_path - 1] = 0;
 
-	return open(file_path, O_WRONLY | O_CREAT);
+	return open(file_path, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 }
