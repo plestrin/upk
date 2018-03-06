@@ -13,7 +13,7 @@ define TEMPLATE
 SRC := $${wildcard $(1)/*.c}
 OBJ := $$(basename build/$$(notdir $$(SRC))).o
 
-$(1)_: build/wrapper.o $$(OBJ)
+$(1)_: build/wrapper.o build/dump.o $$(OBJ)
 	$$(CC) -o $$@ $$^
 
 build/%.o: $(1)/%.c

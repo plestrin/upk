@@ -1,10 +1,13 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
+
+#include "dump.h"
 
 int upk_rtn(const void* data, size_t len);
 
@@ -17,8 +20,16 @@ int main(int argc, char** argv){
 	int 		res;
 
 	if (argc < 2){
-		printf("Usage: %s file [...]\n", argv[0]);
+		printf("Usage: %s [-o output] file [...]\n", argv[0]);
 		return EXIT_FAILURE;
+	}
+
+	if (!strcmp(argv[1], "-o") && argc >= 4){
+		dump_register_path(argv[2]);
+		argv = argv + 2;
+	}
+	else{
+		dump_register_path("out_");
 	}
 
 	for (i = 1; i < argc; i++){
