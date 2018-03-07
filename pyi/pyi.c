@@ -6,7 +6,17 @@
 #include <unistd.h>
 #include <zlib.h>
 
- #include "../dump.h"
+#include "../dump.h"
+
+#define ARCHIVE_ITEM_PYPACKAGE 		'M' /* Python package (__init__.py) */
+#define ARCHIVE_ITEM_ZIPFILE 		'Z' /* zlib (pyz) - frozen Python code */
+#define ARCHIVE_ITEM_BINARY 		'b' /* binary */
+#define ARCHIVE_ITEM_DEPENDENCY 	'd' /* runtime option */
+#define ARCHIVE_ITEM_PYMODULE 		'm' /* Python module */
+#define ARCHIVE_ITEM_RUNTIME_OPTION 'o' /* runtime option */
+#define ARCHIVE_ITEM_PYSOURCE 		's' /* Python script (v3) */
+#define ARCHIVE_ITEM_DATA 			'x' /* data */
+#define ARCHIVE_ITEM_PYZ 			'z' /* zlib (pyz) - frozen Python code */
 
 struct toc{
 	int32_t structlen; 	/* len of this one - including full len of name */
@@ -18,24 +28,17 @@ struct toc{
 	char 	name[1]; 	/* the name to save it as */
 };
 
-static int pyi_write(const char* buffer, size_t size, const char* file_name){
-	int file;
+enum python_version{
+	VERSION_36,
+};
 
-	if ((file = dump_open("pyi", file_name)) < 0){
-		fprintf(stderr, "[-] PYI: unable to open dump file\n");
-		return -1;
-	}
-
-	write(file, buffer, size);
-
-	close(file);
-
-	return 0;
-}
-
-static int pyi_dump(size_t s, const struct toc* t, const void* buffer, size_t len){
+static int pyi_dump(size_t s, const struct toc* t, const void* buffer, size_t len, enum python_version version){
 	size_t 		off = s + ntohl(t->pos);
 	uint32_t 	siz = ntohl(t->len);
+	void* 		out = NULL;
+	const void* wrt;
+	int 		rc = -1;
+	int 		file;
 
 	printf(" size %u, @ 0x%zx, name %s\n", siz, off, t->name);
 
@@ -49,10 +52,10 @@ static int pyi_dump(size_t s, const struct toc* t, const void* buffer, size_t le
 		return -1;
 	}
 
+	wrt = (const void*)((const char*)buffer + off);
+
 	if (t->cflag){
-		void* 		out;
-		z_stream 	zstream;
-		int 		rc = -1;
+		z_stream zstream;
 
 		if ((out = malloc(ntohl(t->ulen))) == NULL){
 			fprintf(stderr, "[-] PYI: unable to allocate memory\n");
@@ -69,7 +72,8 @@ static int pyi_dump(size_t s, const struct toc* t, const void* buffer, size_t le
 
 		if (inflateInit(&zstream) == Z_OK){
 			if (inflate(&zstream, Z_FINISH) != Z_STREAM_ERROR){
-				rc = pyi_write(out, ntohl(t->ulen), t->name);
+				wrt = out;
+				siz = ntohl(t->ulen);
 			}
 			else{
 				fprintf(stderr, "[-] PYI: unable to inflate: %s\n", zstream.msg);
@@ -78,14 +82,41 @@ static int pyi_dump(size_t s, const struct toc* t, const void* buffer, size_t le
 		}
 		else{
 			fprintf(stderr, "[-] PYI: unable to init zlib: %s\n", zstream.msg);
+			goto exit;
 		}
-
-		free(out);
-
-		return rc;
 	}
 
-	return pyi_write((const char*)buffer + off, siz, t->name);
+
+	if ((file = dump_open("pyi", t->name)) < 0){
+		fprintf(stderr, "[-] PYI: unable to open dump file\n");
+		goto exit;
+	}
+
+	if (t->typcd == ARCHIVE_ITEM_PYSOURCE){
+		char header[8] = {0x00, 0x00, '\r', '\n', 0x00, 0x00, 0x00, 0x00};
+
+		switch (version){
+			case VERSION_36 : {
+				header[0] = 0x33;
+				header[1] = 0x0d;
+				break;
+			}
+		}
+
+		write(file, header, sizeof header);
+	}
+
+	write(file, wrt, siz);
+
+	close(file);
+
+	rc = 0;
+
+	exit:
+
+	free(out);
+
+	return rc;
 }
 
 static const char magic[8] = {'M', 'E', 'I', 0x0c, 0x0b, 0x0a, 0x0b, 0x0e};
@@ -105,6 +136,7 @@ int pyi_rtn(const void* buffer, size_t len){
 	size_t 					s;
 	const struct cookie* 	c;
 	const struct toc* 		t;
+	enum python_version 	ver;
 
 	for (i = 0; i < len - sizeof(struct cookie) + 1; i++){
 		if (!memcmp((const char*)buffer + i, magic, sizeof magic)){
@@ -127,43 +159,59 @@ int pyi_rtn(const void* buffer, size_t len){
 				continue;
 			}
 
+			if (!strcmp(c->pylibname, "python36.dll")){
+				ver = VERSION_36;
+			}
+			else{
+				fprintf(stderr, "[-] PYI: unk python version %s -> skip\n", c->pylibname);
+				continue;
+			}
+
 			for (j = 0; j < ntohl(c->toc_len); j += ntohl(t->structlen)){
 				t = (const struct toc*)((const char*)buffer + s + ntohl(c->toc_off) + j);
 				switch (t->typcd){
-					case 'M' : {
+					case ARCHIVE_ITEM_PYPACKAGE : {
 						printf("[+] PYI: package item");
 						break;
 					}
-					case 'Z' : {
+					case ARCHIVE_ITEM_ZIPFILE : {
 						printf("[+] PYI: zipFile ");
 						break;
 					}
-					case 'b' : {
+					case ARCHIVE_ITEM_BINARY : {
 						printf("[+] PYI: binary");
 						break;
 					}
-					case 'd' : {
+					case ARCHIVE_ITEM_DEPENDENCY : {
 						printf("[+] PYI: dependency");
 						break;
 					}
-					case 'm' : {
+					case ARCHIVE_ITEM_PYMODULE : {
 						printf("[+] PYI: python module");
 						break;
 					}
-					case 's' : {
+					case ARCHIVE_ITEM_RUNTIME_OPTION : {
+						printf("[+] PYI: runtime option");
+						break;
+					}
+					case ARCHIVE_ITEM_PYSOURCE : {
 						printf("[+] PYI: python script");
 						break;
 					}
-					case 'z' : {
+					case ARCHIVE_ITEM_DATA : {
+						printf("[+] PYI: data");
+						break;
+					}
+					case ARCHIVE_ITEM_PYZ : {
 						printf("[+] PYI: pyz");
 						break;
 					}
 					default : {
-						fprintf(stderr, "[-] PYI: unk TOC type: '%c'\n", t->typcd);
+						fprintf(stderr, "[-] PYI: unk TOC type: '%c'", t->typcd);
 						break;
 					}
 				}
-				pyi_dump(s, t, buffer, len);
+				pyi_dump(s, t, buffer, len, ver);
 			}
 
 			if (j != ntohl(c->toc_len)){
