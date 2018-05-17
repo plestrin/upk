@@ -1,4 +1,4 @@
-UPK_MOD := pyi
+UPK_MOD := pyi sgn
 CC		:= gcc
 CFLAGS	:= -W -Wall -pedantic -Wextra -O3 -std=c99 -D_GNU_SOURCE
 
