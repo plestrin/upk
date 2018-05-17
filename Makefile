@@ -18,7 +18,7 @@ $(1)_: build/wrapper.o build/dump.o $$(OBJ)
 	$$(CC) -o $$@ $$^ $$(LIB)
 
 build/%.o: $(1)/%.c
-	$$(CC) -o $$@ -c $$< $$(CFLAGS) -Dpyi_rtn=upk_rtn
+	$$(CC) -o $$@ -c $$< $$(CFLAGS) -D$(1)_rtn=upk_rtn
 endef
 
 $(foreach mod,$(UPK_MOD),$(eval $(call TEMPLATE,$(mod))))
