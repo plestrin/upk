@@ -18,7 +18,7 @@
 #define ARCHIVE_ITEM_DATA 			'x' /* data */
 #define ARCHIVE_ITEM_PYZ 			'z' /* zlib (pyz) - frozen Python code */
 
-struct toc{
+struct toc {
 	int32_t structlen; 	/* len of this one - including full len of name */
 	int32_t pos; 		/* pos rel to start of concatenation */
 	int32_t len; 		/* len of the data (compressed) */
@@ -28,7 +28,7 @@ struct toc{
 	char 	name[1]; 	/* the name to save it as */
 };
 
-enum python_version{
+enum python_version {
 	VERSION_36,
 };
 
@@ -121,7 +121,7 @@ static int pyi_dump(size_t s, const struct toc* t, const void* buffer, size_t le
 
 static const char magic[8] = {'M', 'E', 'I', 0x0c, 0x0b, 0x0a, 0x0b, 0x0e};
 
-struct cookie{
+struct cookie {
 	char 		magic[8]; 		/* 'MEI\014\013\012\013\016' */
 	uint32_t 	len; 			/* len of entire package */
 	uint32_t 	toc_off; 		/* pos (rel to start) of TableOfContents */
