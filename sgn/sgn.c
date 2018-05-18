@@ -6,7 +6,7 @@
 
 #include "../dump.h"
 
-/* Does not support BufferRegister yet */
+static uint32_t buffer_register;
 
 #define IK_SIZE 5
 
@@ -14,10 +14,10 @@ static size_t match_IK(uint8_t* buffer, size_t len){
 	if (len < IK_SIZE){
 		return 0;
 	}
-	if ((buffer[0] & 0xf) > 0x1 && (buffer[0] >> 4) == 0xa){
+	if ((buffer[0] & 0xf) >= 0x1 && (buffer[0] >> 4) == 0xa){
 		return IK_SIZE;
 	}
-	if ((buffer[0] & 0xf) > 0x8 && (buffer[0] >> 4) == 0xb){
+	if ((buffer[0] & 0xf) >= 0x8 && (buffer[0] >> 4) == 0xb){
 		return IK_SIZE;
 	}
 
@@ -79,8 +79,52 @@ static size_t match_FN(uint8_t* buffer, size_t len){
 }
 
 static size_t match_GP(uint8_t* buffer, size_t len){
-	if (len && (buffer[0] & 0xf) > 0x8 && (buffer[0] >> 4) == 0x5){
+	/* POP */
+	if ((buffer[0] & 0xf) >= 0x8 && (buffer[0] >> 4) == 0x5){
+		buffer_register = 0;
 		return 1;
+	}
+
+	/* LEA */
+	if (len >= 2 && buffer[0] == 0x8d && buffer[1] < 0x40){
+		buffer_register = 1;
+		return 2;
+	}
+	if (len >= 3 && buffer[0] == 0x8d && buffer[1] < 0x80){
+		buffer_register = 1;
+		return 3;
+	}
+	if (len >= 6 && buffer[0] == 0x8d && buffer[1] < 0xc0){
+		buffer_register = 1;
+		return 6;
+	}
+
+	/* MOV */
+	if (len >= 2 && buffer[0] == 0x89 && buffer[1] >= 0xc0){
+		buffer_register = 1;
+
+		/* ADD & SUB */
+		if (len >= 2 + 3 && buffer[2] == 0x83 && buffer[3] >= 0xc0){
+			return 5;
+		}
+		if (len >= 2 + 6 && buffer[2] == 0x81 && buffer[3] >= 0xc0){
+			return 8;
+		}
+
+		/* INC & DEC */
+		if (len >= 2 + 1 && buffer[2] >= 0x40 && buffer[2] < 0x50){
+			if (len >= 2 + 2 && buffer[3] >= 0x40 && buffer[3] < 0x50){
+				if (len >= 2 + 3 && buffer[4] >= 0x40 && buffer[4] < 0x50){
+					return 5;
+				}
+
+				return 4;
+			}
+
+			return 3;
+		}
+
+		return 2;
 	}
 
 	return 0;
@@ -204,37 +248,49 @@ int sgn_rtn(const void* buffer, size_t len){
 					case IK_FP_FN_GP_CL_IC : {
 						key = get_IK((uint8_t*)buffer + i);
 						siz = get_size((uint8_t*)buffer + s[4]);
-						off = s[0];
+						if (!buffer_register){
+							off = s[0];
+						}
 						break;
 					}
 					case FP_IK_FN_GP_CL_IC : {
 						key = get_IK((uint8_t*)buffer + s[0]);
 						siz = get_size((uint8_t*)buffer + s[4]);
-						off = s[0];
+						if (!buffer_register){
+							off = i;
+						}
 						break;
 					}
 					case FP_FN_IK_GP_CL_IC : {
 						key = get_IK((uint8_t*)buffer + s[1]);
 						siz = get_size((uint8_t*)buffer + s[4]);
-						off = s[0];
+						if (!buffer_register){
+							off = i;
+						}
 						break;
 					}
 					case FP_FN_GP_IK_CL_IC : {
 						key = get_IK((uint8_t*)buffer + s[2]);
 						siz = get_size((uint8_t*)buffer + s[4]);
-						off = i;
+						if (!buffer_register){
+							off = i;
+						}
 						break;
 					}
 					case FP_FN_GP_CL_IK_IC : {
 						key = get_IK((uint8_t*)buffer + s[3]);
 						siz = get_size((uint8_t*)buffer + s[4]);
-						off = i;
+						if (!buffer_register){
+							off = i;
+						}
 						break;
 					}
 					case FP_FN_GP_CL_IC_IK : {
 						key = get_IK((uint8_t*)buffer + s[4]);
 						siz = get_size((uint8_t*)buffer + s[3]);
-						off = i;
+						if (!buffer_register){
+							off = i;
+						}
 						break;
 					}
 				}
@@ -246,7 +302,7 @@ int sgn_rtn(const void* buffer, size_t len){
 					off += (size_t)((uint8_t*)buffer)[s[5] + 2];
 				}
 
-				printf("[+] SGN: key: 0x%x, size: 0x%zx, off: 0x%zx\n", key, siz, off);
+				printf("[+] SGN: key: 0x%x, size: 0x%zx, off: 0x%zx, buffer register: %c\n", key, siz, off, buffer_register ? 'Y' : 'N');
 
 				if (off + siz * 4 > len){
 					fprintf(stderr, "[-] SGN: incorrect size\n");
@@ -290,6 +346,7 @@ int sgn_rtn(const void* buffer, size_t len){
 				else{
 					memcpy(clone, buffer, len);
 					memcpy(clone + off, d, siz * 4);
+					memset(clone + i, 0x90, l + LOOP_SIZE - i);
 
 					if ((file = dump_open("sgn", "inplace")) < 0){
 						fprintf(stderr, "[-] SGN: unable to open dump file\n");
