@@ -296,7 +296,7 @@ int sgn_rtn(const void* buffer, size_t len){
 				}
 
 				if (((uint8_t*)buffer)[s[5]] == 0x83){
-					off += (size_t)((uint8_t*)buffer)[s[5] + 5];
+					off += (size_t)((uint8_t*)buffer)[s[5] + 5] + 4;
 				}
 				else{
 					off += (size_t)((uint8_t*)buffer)[s[5] + 2];
