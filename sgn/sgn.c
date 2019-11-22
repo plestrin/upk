@@ -213,17 +213,20 @@ static uint32_t* decode(uint32_t* buffer, uint32_t key, size_t size){
 	return result;
 }
 
+static uint8_t* inplace;
+
 #define BODY_SIZE 9
 #define LOOP_SIZE (BODY_SIZE + 2)
 #define LOOP_OPCODE 0xf5e2
 #define MIN_ENCRYPTED (LOOP_SIZE + 1)
 
-int sgn_rtn(const void* buffer, size_t len){
+static int sgn_rtn_rec(const void* buffer, size_t len, size_t offset){
 	size_t 		i;
 	uint32_t 	j;
 	uint32_t 	k;
 	size_t 		l;
 	size_t 		s[6];
+	int 		status = 0;
 
 	for (i = 0; i < len - LOOP_SIZE; i++){
 		for (j = 0; j < 6; j++){
@@ -239,8 +242,6 @@ int sgn_rtn(const void* buffer, size_t len){
 				size_t 		siz = 0;
 				uint32_t* 	d;
 				uint32_t 	c;
-				int 		file;
-				uint8_t* 	clone;
 				uint32_t 	first;
 				uint32_t 	disp;
 
@@ -330,41 +331,60 @@ int sgn_rtn(const void* buffer, size_t len){
 					continue;
 				}
 
-				if ((file = dump_open("sgn", "extrude")) < 0){
-					fprintf(stderr, "[-] SGN: unable to open dump file\n");
-				}
-				else{
-					write(file, (uint8_t*)d + c, siz * 4 - c);
-					close(file);
+				status = 1;
 
-					printf("[+] SGN: the decoded data was saved\n");
-				}
+				memcpy(inplace + offset + off, d, siz * 4);
+				memset(inplace + offset + i, 0x90, l + LOOP_SIZE - i);
 
-				if ((clone = malloc(len)) == NULL){
-					fprintf(stderr, "[-] SGN: unable to allocate memory\n");
-				}
-				else{
-					memcpy(clone, buffer, len);
-					memcpy(clone + off, d, siz * 4);
-					memset(clone + i, 0x90, l + LOOP_SIZE - i);
+				if (!sgn_rtn_rec((uint8_t*)d + c, siz * 4 - c, offset + off + c)){
+					int file;
+					char file_name[32];
 
-					if ((file = dump_open("sgn", "inplace")) < 0){
+					snprintf(file_name, sizeof file_name, "extrude_%zx", offset + off + c);
+
+					if ((file = dump_open("sgn", file_name)) < 0){
 						fprintf(stderr, "[-] SGN: unable to open dump file\n");
 					}
 					else{
-						write(file, clone, len);
+						write(file, (uint8_t*)d + c, siz * 4 - c);
 						close(file);
 
-						printf("[+] SGN: the original file with the decoded data was saved\n");
+						printf("[+] SGN: the decoded data was saved\n");
 					}
-
-					free(clone);
 				}
 
 				free(d);
 			}
 		}
 	}
+
+	return status;
+}
+
+int sgn_rtn(const void* buffer, size_t len){
+	int file;
+
+	if ((inplace = malloc(len)) == NULL){
+		fprintf(stderr, "[-] SGN: unable to allocate memory\n");
+		return -1;
+	}
+
+	memcpy(inplace, buffer, len);
+
+	if (sgn_rtn_rec(buffer, len, 0)){
+		if ((file = dump_open("sgn", "inplace")) < 0){
+			fprintf(stderr, "[-] SGN: unable to open dump file\n");
+		}
+		else{
+			write(file, inplace, len);
+			close(file);
+
+			printf("[+] SGN: the original file with the decoded data was saved\n");
+		}
+	}
+
+	free(inplace);
+	inplace = NULL;
 
 	return 0;
 }
